@@ -62,6 +62,8 @@ def addresses(text):
 
 		text = re.sub(i,i[-1].upper(),text)
 	
+	text = re.sub("I yield.*?\.",text,re.S)
+	
 	##now clean up some formatting problems
 	text = re.sub("``","\'\'",text)
 	text = re.sub("- ","-",text)
@@ -80,7 +82,7 @@ def main(filename):
 	
 	for k in keys:
 		id = j[k]['id']
-		transcript_filename = "speaker_texts/%s.txt" %id
+		transcript_filename = "speaker/%s.txt" %id
 		try:
 			e = open(transcript_filename,'r')
 			text = e.read()
