@@ -34,7 +34,11 @@ def minimize_string(raw_text):
 	for p in punct:
 		query_string = query_string.replace(p,' ')
 	
+	#remove urls
+	query_string = re.sub("http.*? ","",query_string)
 	
+	
+	#remove duplicate spaces
 	query_string = query_string.replace('  ',' ')
 	
 	
@@ -43,7 +47,11 @@ def minimize_string(raw_text):
 	
 	
 	sws = ['i','me','my','myself','we','our','ours','ourselves','you','your','yours','yourself','yourselves','he','him','his','himself','she','her','hers','herself','it','its','itself','they','them','their','theirs','themselves','what','which','who','whom','this','that','these','those','am','is','are','was','were','be','been','being','have','has','had','having','do','does','did','doing','a','an','the','and','but','if','or','because','as','until','while','of','at','by','for','with','about','against','between','into','through','during','before','after','above','below','to','from','up','down','in','out','on','off','over','under','again','further','then','once','here','there','when','where','why','how','all','any','both','each','few','more','most','other','some','such','no','nor','not','only','own','same','so','than','too','very','s','t','can','will','just','don','should','now']
-
+	
+	johns_stopwords = ['sanders','senator','policy','position','opinion','feel','think','should']
+	
+	sws += johns_stopwords
+	
 	words_list = [w for w in words_list if w not in sws]
 	
 	
@@ -136,7 +144,8 @@ def score_items(documents_json,corpus_json,scored_input_list,json_key_1='',json_
 		if this_item_score > 0:
 			output_scores[k] = this_item_score
 	
-	'''print output_scores'''
+	scores_no_keys = [output_scores[k] for k in output_scores.keys()]
+	'''print max(scores_no_keys)'''
 	return output_scores
 
 
@@ -153,6 +162,7 @@ def choose_item(score_dict):
 	
 	probs = np.array(processed_weights)
 	probs /= probs.sum()
+	
 
 	choice = np.random.choice(arr, 1, replace=False, p=probs)
 	return choice
@@ -160,16 +170,26 @@ def choose_item(score_dict):
 
 
 	
-def choose_sentences(chosen_article_full_sentences,choice_index):
+def choose_sentences(chosen_article_full_sentences,choice_index,n=3):
 	
 	full_sent = chosen_article_full_sentences
 	
-	if choice_index == 0:
-		output = "%s %s %s" %(full_sent[0],full_sent[1],full_sent[2])
-	elif choice_index == len(full_sent)-1:
-		output = "%s %s %s" %(full_sent[-3],full_sent[-2],full_sent[-1])
-	else:
-		output = "%s %s %s" %(full_sent[choice_index-1],full_sent[choice_index],full_sent[choice_index+1])
+	if n==3:
+		if choice_index == 0:
+			output = "%s %s %s" %(full_sent[0],full_sent[1],full_sent[2])
+		elif choice_index == len(full_sent)-1:
+			output = "%s %s %s" %(full_sent[-3],full_sent[-2],full_sent[-1])
+		else:
+			output = "%s %s %s" %(full_sent[choice_index-1],full_sent[choice_index],full_sent[choice_index+1])
+	if n==2:
+		if choice_index == 0:
+			output = "%s %s" %(full_sent[0],full_sent[1])
+		elif choice_index == len(full_sent)-1:
+			output = "%s %s" %(full_sent[-2],full_sent[-1])
+		else:
+			output = "%s %s" %(full_sent[choice_index-1],full_sent[choice_index])
+	if n==1:
+		output = full_sent[choice_index]
 	
 	return output
 
@@ -179,52 +199,59 @@ def twitterize(final_sentences,replytouser,document_json,url_length):
 
 	output_tweets = []
 	
-	if len(final_sentences) + len(replytouser) + 4 < 140:
-		output_tweets = ".@%s %s" %(replytouser,final_sentences)
-	
 	tweet_count = 1
-	char_idx = 0
-	text_block = final_sentences
+	
+	if len(final_sentences) + len(replytouser) + 4 < 140 and replytouser != '':
+		output_tweets.append("@%s %s" %(replytouser,final_sentences))
+	else:
+		
+		char_idx = 0
+		text_block = final_sentences
 	
 	
-	while True:
-		tweetstring = str()
-		if tweet_count ==1:
-			tweetstring = ".@%s " %replytouser
+		while True:
+			tweetstring = str()
+			if tweet_count ==1 and replytouser != '':
+				tweetstring = "@%s " %replytouser
 		
-		try:
-			remaining_chars = 140 - len(tweetstring)
-			text_block[remaining_chars]
-		except:
-			tweetstring = text_block
-			output_tweets.append(tweetstring)
-			break
+			try:
+				remaining_chars = 134 - len(tweetstring)
+				text_block[remaining_chars]
+			except:
+				tweetstring = "%s (%s/%s)" %(text_block,str(tweet_count),str(tweet_count+1))
+				output_tweets.append(tweetstring)
+				break
 		
-		#find first available space
-		space_lookup = remaining_chars-1
-		space_idx = -1
+			#find first available space
+			space_lookup = remaining_chars-1
+			space_idx = -1
 		
-		while space_idx == -1:
-			space_idx = text_block.rfind(" ",space_lookup,remaining_chars)
-			space_lookup -=1
+			while space_idx == -1:
+				space_idx = text_block.rfind(" ",space_lookup,remaining_chars)
+				space_lookup -=1
 		
-		tweetstring += text_block[0:space_idx]
+			tweetstring += "%s (%s/NNN)" %(text_block[0:space_idx],str(tweet_count))
 		
-		text_block = text_block[space_idx+1:]
+			text_block = text_block[space_idx+1:]
 
-		output_tweets.append(tweetstring)
+			output_tweets.append(tweetstring)
 		
-		tweet_count += 1
+			tweet_count += 1
 	
+	print output_tweets
 	
+	if tweet_count ==1:
+		output_tweets = [re.sub('\([0-9]+/NNN\)','',t) for t in output_tweets]
+	else:
+		output_tweets = [re.sub('(?<=/)NNN',str(tweet_count+1),t) for t in output_tweets]
 	
 	url = "http://www.congress.gov%s" %document_json['metadata']['url']
 	date = document_json['metadata']['date']
 	title = document_json['metadata']['title'].title()
 	
 	look_backwards_idx=len(title)-1
-	source_info_tweet = "Source: %s -- %s\n%s" %(title,date,url)
-	while len(title) + len(date) + url_length + 13 > 140:
+	source_info_tweet = "Source: %s -- %s\n%s (%s/%s)" %(title,date,url,str(tweet_count+1),str(tweet_count+1))
+	while len(title) + len(date) + url_length + 15 > 140:
 	
 		last_space_idx = title.rfind(" ",look_backwards_idx)
 		if last_space_idx == -1:
@@ -232,7 +259,7 @@ def twitterize(final_sentences,replytouser,document_json,url_length):
 		else:
 			title = "%s..." %title[:last_space_idx]
 			look_backwards_idx = len(title)-1
-		source_info_tweet = "Source: %s -- %s\n%s" %(title,date,url)
+		source_info_tweet = "Source: %s -- %s\n%s (%s/%s)" %(title,date,url,str(tweet_count+1),str(tweet_count+1))
 	
 	output_tweets.append(source_info_tweet)
 	
@@ -242,7 +269,19 @@ def twitterize(final_sentences,replytouser,document_json,url_length):
 
 
 
-def bernie_main(query_string,user_id,url_length=22):
+
+
+
+
+
+
+
+
+
+
+
+
+def speaker_main(query_string,user_id,n=3,url_length=22):
 	
 	
 	#minimize and score text
@@ -274,12 +313,12 @@ def bernie_main(query_string,user_id,url_length=22):
 	
 	chosen_sentence_idx = int(choose_item(sentence_scores)[0])
 	#turn this on to check that the correct sentence is actually being selected. if not, something is screwed up in the app that produced the json output
-	'''print j[chosen_article]['indexed_sentences']['full_sentences'][chosen_sentence_idx]
-	print j[chosen_article]['indexed_sentences']['minimized_tallied_sentences'][str(chosen_sentence_idx)]'''
+	'''print j['documents'][chosen_article]['indexed_sentences']['full_sentences'][chosen_sentence_idx]
+	print j['documents'][chosen_article]['indexed_sentences']['minimized_tallied_sentences'][str(chosen_sentence_idx)]'''
 	
 	
-	final_sentences = choose_sentences(documents_json[chosen_article]['indexed_sentences']['full_sentences'],chosen_sentence_idx)
-	
+
+	final_sentences = choose_sentences(documents_json[chosen_article]['indexed_sentences']['full_sentences'],chosen_sentence_idx,n)
 	
 	tweets = twitterize(final_sentences,user_id,documents_json[chosen_article],url_length)
 
@@ -293,29 +332,87 @@ def bernie_main(query_string,user_id,url_length=22):
 
 
 
+def speaker_tweets_independently():
+
+	twitter_api = get_twitter_api()
+	
+	timeline_tweets = twitter_api.GetHomeTimeline(count=50)
+	
+	tweets_texts = [i.text.encode('ascii',errors='ignore') for i in timeline_tweets]
+	timeline_text = str()
+	for i in tweets_texts:
+		timeline_text += i.encode('ascii',errors='ignore') + "."
+	
+	response_tweets = speaker_main(str(timeline_text),'',n=1)
+	
+	attempts = 1
+	
+	while attempts <4:
+		response_tweets = speaker_main(str(timeline_text),'',n=2)		
+		d = open('response_log.json', 'r')
+		t = d.read()
+		d.close()
+		j = json.loads(t)
+		
+		
+		logged_texts = [j[k] for k in j]
+		
+		duplicate=0
+		for ts in tweets_texts:
+			if ts in logged_texts:
+				duplicate = 1
+				attempts += 1
+				if attempts >= 4:
+					response_tweets=[]
+		if duplicate == 0:
+			break
+	
+	return response_tweets
 
 
 
 
-def log_responses(message):
-    l = open('response_log.txt', 'a')
-    l.write('Response\t' + str(message) + '\n')
-    l.close()
-    
 
-def post_response(s,start_id):
-    
-    
-	try:
-		twitter_api = get_twitter_api()
-		id = start_id
-		for tweet in s:
-			response = twitter_api.PostUpdate(status=tweet,in_reply_to_status_id=id)
-			print response
-			log_responses(response)
-			id = response.id
-	except:
-		response = {}
+
+
+
+
+
+def log_responses(response):
+    d = open('response_log.json', 'r')
+    t = d.read()
+    d.close()
+    j = json.loads(t)
+    j[response.id] = response.text
+    e = open('response_log.json', 'w')
+    out = json.dumps(j)
+    e.write(out)
+    e.close()
+
+def post_tweets(s,start_id=''):
+	twitter_api = get_twitter_api()
+	id = start_id
+	for tweet in s:
+		while True:
+			try:
+				if id != '':
+					response = twitter_api.PostUpdate(status=tweet,in_reply_to_status_id=id)
+				else:
+					response = twitter_api.PostUpdate(status=tweet)
+				log_responses(response)
+				id = response.id
+				break
+			except twitter.TwitterError as inst:
+				e = inst
+				message = s.message[0]['message']
+				##tweet the whole thing out, no matter how long it is or how long it takes (yes, this could be a terrible idea).
+				if message =='Rate limit exceeded.':
+					timeout(300,"rate limit exceeded")
+				##if i get duplicates on the final, sourcing tweets (it's already happened), then i should just change something minor (here, removing the last word) and then circle back and try again
+				elif message == 'Status is a duplicate.' and s.index(tweet) == len(s)-1:
+					tweet = re.sub(' [^ ]+\n(?=https://)','\n',tweet)
+				else:
+					break
 	
 	return response
     
@@ -340,24 +437,26 @@ def timeout(s,message=""):
 
 def get_new_mentions():
 	
-	twitter_api = get_twitter_api()
-	
-	mentions = twitter_api.GetMentions()
-	
-	mentions = [{"user":i.user.screen_name,"status_id":i.id,"text":i.text} for i in mentions]
 	
 	d = open('logged_mentions.json','r')
 	t = d.read()
 	d.close()
 	j = json.loads(t)
 	
+	newest_known_mention = max([int(i) for i in j.keys()])
+		
 	logged_mentions = j.keys()
 	
-	new_mentions = [mention for mention in mentions if str(mention['status_id']) not in logged_mentions]
+	twitter_api = get_twitter_api()
+	
+	mentions = twitter_api.GetMentions(since_id=newest_known_mention+1)
+	
+	new_mentions = [{"user":i.user.screen_name,"status_id":i.id,"text":i.text} for i in mentions if int(i.id)>(newest_known_mention+1)]	
 	
 	for new_mention in new_mentions:
 		j[new_mention['status_id']] = new_mention['user']
 	
+	print new_mentions
 	
 	output_json = json.dumps(j)
 	d = open('logged_mentions.json','w')
@@ -369,29 +468,49 @@ def get_new_mentions():
 
 
 if __name__ == "__main__":
+	cycles_without_tweets = 59
+	
 	while True:
+		tweeted_this_cycle = 0
 		try:
+			print "checking"
 			new_mentions = get_new_mentions()
 			if len(new_mentions) > 0:
+				tweeted_this_cycle = 1
 				print "found %s new interactions" %str(len(new_mentions))
 				for new_mention in new_mentions:
-					post_error_score = 1
-					while post_error_score in [1,2]:
-						try:
-							print new_mention
-							response_tweets = bernie_main(new_mention['text'],new_mention['user'])
-							print "response tweets = %s" %str(response_tweets)
-							post_response(response_tweets,new_mention['status_id'])
-							print "replied to %s with %s new tweets" %(new_mention['user'],str(len(response_tweets)))
-							post_error_score = 0
-						except:
-							timeout(300,"error posting tweets")
-							post_error_score +=1
-			
-		
-			print "checking"
-			timeout(90)
+					
+					try:
+						print new_mention
+						response_tweets = speaker_main(new_mention['text'],new_mention['user'])
+						print "response tweets = %s" %str(response_tweets)
+					except:
+						print "bernie had nothing to say"
+						post_tweets(["@%s I've got nothing on that. Maybe rephrase?" %new_mention['user']],new_mention['status_id'])
+					try:
+						post_tweets(response_tweets,new_mention['status_id'])
+						print "replied to %s with %s new tweets" %(new_mention['user'],str(len(response_tweets)))
+					except:
+						pass
+
+
+			if tweeted_this_cycle == 0:
+				cycles_without_tweets += 1
+			else:
+				cycles_without_tweets = 0
+				
+			if cycles_without_tweets >= 60:
+				print "bernie has gone 80 cycles without a query. now tweeting unprompted."
+				cycles_without_tweets = 0
+				unprompted_tweets = speaker_tweets_independently()
+				
+				if unprompted_tweets!=[]:
+					post_tweets(unprompted_tweets)
+				else:
+					print "bernie had nothing new to say"
+			timeout(60)
 		except:
 			timeout(300,"error getting mentions")
+			cycles_without_tweets += 1
 		
 		

@@ -1,1 +1,1 @@
-worker: python bernie_tw_interface.py
+worker: python congressbot_tw_interface.py
