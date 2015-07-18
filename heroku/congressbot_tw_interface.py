@@ -273,14 +273,6 @@ def twitterize(final_sentences,replytouser,document_json,url_length,max_length=1
 
 
 
-
-
-
-
-
-
-
-
 def speaker_main(query_string,user_id,n=3,url_length=22):
 	
 	
@@ -347,7 +339,7 @@ def speaker_tweets_independently():
 	
 	attempts = 1
 	
-	while attempts <4:
+	while attempts <3:
 		response_tweets = speaker_main(str(timeline_text),'',n=2)		
 		d = open('response_log.json', 'r')
 		t = d.read()
@@ -378,12 +370,40 @@ def speaker_tweets_independently():
 
 
 
-def log_responses(response):
+def log_responses(id,text):
     d = open('response_log.json', 'r')
     t = d.read()
     d.close()
     j = json.loads(t)
-    j[response.id] = response.text
+    j[id] = text
+	#keep this list of screened responses under 500 -- don't want to unnecessarily screen out good ones as duplicates.
+	#when deleting old entries, make sure to get those that are paired with it (otherwise, the duplicate check will allow the first tweet, but screen out subsequent tweets.
+	if j.keys()>500:
+		ids = j.keys()
+		oldest = min(ids)
+		paired = [oldest]
+		ids.remove(oldest)
+		tag = re.search("(?<=\()[0-9]+/[0-9]+(?=\))",j[oldest]).group(0)
+		oldest_index,oldest_max = [int(x) for x in tag.split('/')]
+		while True:
+			next_oldest = min(ids)
+			ids.remove(next_oldest)
+
+			next_tag = re.search("(?<=\()[0-9]+/[0-9]+(?=\))",j[oldest]).group(0)
+			next_index,next_max = [int(x) for x in tag.split('/')]
+			
+			if next_max == oldest_max and next_index > oldest_index:
+				paired.append(next_oldest)
+				oldest_index = next_index
+				
+			else:
+				break
+		
+		
+		
+		for i in paired:
+			del j[paired]
+    
     e = open('response_log.json', 'w')
     out = json.dumps(j)
     e.write(out)
@@ -399,7 +419,7 @@ def post_tweets(s,start_id=''):
 					response = twitter_api.PostUpdate(status=tweet,in_reply_to_status_id=id)
 				else:
 					response = twitter_api.PostUpdate(status=tweet)
-				log_responses(response)
+				log_responses(response.id,tweet)
 				id = response.id
 				break
 			except twitter.TwitterError as inst:
@@ -416,6 +436,7 @@ def post_tweets(s,start_id=''):
 					##if i get duplicates on non-final tweets, then just exit.
 					else:
 						print "Duplicate tweet: %s" %tweet
+						log_responses(id+1,tweet)
 						return response
 				else:
 					return response
