@@ -194,7 +194,7 @@ def choose_sentences(chosen_article_full_sentences,choice_index,n=3):
 	return output
 
 
-def twitterize(final_sentences,replytouser,document_json,url_length):
+def twitterize(final_sentences,replytouser,document_json,url_length,max_length=10):
 
 
 	output_tweets = []
@@ -209,7 +209,7 @@ def twitterize(final_sentences,replytouser,document_json,url_length):
 		text_block = final_sentences
 	
 	
-		while True:
+		while tweet_count <= max_length:
 			tweetstring = str()
 			if tweet_count ==1 and replytouser != '':
 				tweetstring = "@%s " %replytouser
@@ -405,14 +405,20 @@ def post_tweets(s,start_id=''):
 			except twitter.TwitterError as inst:
 				e = inst
 				message = s.message[0]['message']
-				##tweet the whole thing out, no matter how long it is or how long it takes (yes, this could be a terrible idea).
+				##tweet the whole thing out.
 				if message =='Rate limit exceeded.':
 					timeout(300,"rate limit exceeded")
-				##if i get duplicates on the final, sourcing tweets (it's already happened), then i should just change something minor (here, removing the last word) and then circle back and try again
-				elif message == 'Status is a duplicate.' and s.index(tweet) == len(s)-1:
-					tweet = re.sub(' [^ ]+\n(?=https://)','\n',tweet)
+				
+				elif message == 'Status is a duplicate.':
+					##if i get duplicates on the final, sourcing tweets (it's already happened), then i should just change something minor (here, removing the last word) and then circle back and try again
+					if s.index(tweet) == len(s)-1:
+						tweet = re.sub(' [^ ]+\n(?=https://)','\n',tweet)
+					##if i get duplicates on non-final tweets, then just exit.
+					else:
+						print "Duplicate tweet: %s" %tweet
+						return response
 				else:
-					break
+					return response
 	
 	return response
     
@@ -435,32 +441,32 @@ def timeout(s,message=""):
 	 	elapsed = (time.time() - start)
 	 print "resuming"
 
-def get_new_mentions():
+def get_new_mentions(min_id):
 	
 	
-	d = open('logged_mentions.json','r')
+	'''d = open('logged_mentions.json','r')
 	t = d.read()
 	d.close()
 	j = json.loads(t)
 	
 	newest_known_mention = max([int(i) for i in j.keys()])
 		
-	logged_mentions = j.keys()
+	logged_mentions = j.keys()'''
 	
 	twitter_api = get_twitter_api()
 	
-	mentions = twitter_api.GetMentions(since_id=newest_known_mention+1)
+	mentions = twitter_api.GetMentions(since_id=min_id)
 	
-	new_mentions = [{"user":i.user.screen_name,"status_id":i.id,"text":i.text} for i in mentions if int(i.id)>(newest_known_mention+1)]	
+	new_mentions = [{"user":i.user.screen_name,"status_id":i.id,"text":i.text} for i in mentions if int(i.id)>(min_id)]	
 	
-	for new_mention in new_mentions:
-		j[new_mention['status_id']] = new_mention['user']
+	'''for new_mention in new_mentions:
+		j[new_mention['status_id']] = new_mention['user']'''
 	
 	print new_mentions
 	
-	output_json = json.dumps(j)
+	'''output_json = json.dumps(j)
 	d = open('logged_mentions.json','w')
-	d.write(output_json)
+	d.write(output_json)'''
 	
 	
 	return new_mentions
@@ -468,13 +474,26 @@ def get_new_mentions():
 
 
 if __name__ == "__main__":
-	cycles_without_tweets = 59
+	cycles_without_tweets = 0
+	trigger = 120
+	
+	last_tweet_id = 0
+	
+	while last_tweet_id == 0:
+		twitter_api = get_twitter_api()
+		timeline = twitter_api.GetHomeTimeline()
+		ids = [int(i.id) for i in timeline]	
+		last_tweet_id = max(ids)
+		print last_tweet_id
 	
 	while True:
+		
+		response = {}
+		
 		tweeted_this_cycle = 0
 		try:
 			print "checking"
-			new_mentions = get_new_mentions()
+			new_mentions = get_new_mentions(last_tweet_id)
 			if len(new_mentions) > 0:
 				tweeted_this_cycle = 1
 				print "found %s new interactions" %str(len(new_mentions))
@@ -486,12 +505,12 @@ if __name__ == "__main__":
 						print "response tweets = %s" %str(response_tweets)
 					except:
 						print "bernie had nothing to say"
-						post_tweets(["@%s I've got nothing on that. Maybe rephrase?" %new_mention['user']],new_mention['status_id'])
+						response = post_tweets(["@%s I've got nothing on that. Maybe rephrase?" %new_mention['user']],new_mention['status_id'])
 					try:
-						post_tweets(response_tweets,new_mention['status_id'])
+						response = post_tweets(response_tweets,new_mention['status_id'])
 						print "replied to %s with %s new tweets" %(new_mention['user'],str(len(response_tweets)))
 					except:
-						pass
+						last_tweet_id = new_mention['status_id']
 
 
 			if tweeted_this_cycle == 0:
@@ -499,13 +518,13 @@ if __name__ == "__main__":
 			else:
 				cycles_without_tweets = 0
 				
-			if cycles_without_tweets >= 60:
-				print "bernie has gone 80 cycles without a query. now tweeting unprompted."
+			if cycles_without_tweets >= trigger:
+				print "bernie has gone %s cycles without a query. now tweeting unprompted." %str(trigger)
 				cycles_without_tweets = 0
 				unprompted_tweets = speaker_tweets_independently()
 				
 				if unprompted_tweets!=[]:
-					post_tweets(unprompted_tweets)
+					response = post_tweets(unprompted_tweets)
 				else:
 					print "bernie had nothing new to say"
 			timeout(60)
@@ -513,4 +532,9 @@ if __name__ == "__main__":
 			timeout(300,"error getting mentions")
 			cycles_without_tweets += 1
 		
+		try:
+			last_tweet_id = int(response.id)
+			print "Last tweet id = %s" %str(last_tweet_id)
+		except:
+			pass
 		
