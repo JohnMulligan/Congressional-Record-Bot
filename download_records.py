@@ -13,7 +13,7 @@ def get_page_items(page_source,url):
 	
 	items_list = []
 
-	results_block = re.search("<ul class=\"results_list\">.*?</ul>",page_source,re.S).group(0)
+	results_block = re.search("<ol class=\"results_list\".*?</ol>",page_source,re.S).group(0)
 
 	results_list = re.findall("(?<=<li>).*?(?=</li>)",results_block,re.S)
 
@@ -124,6 +124,7 @@ if __name__ == '__main__':
 		results_position_block = re.sub(",","",results_position_block)
 		a,b = re.search("[0-9]+-[0-9]+",results_position_block).group(0).split('-')
 		total = re.search("(?<=of )[0-9]+",results_position_block).group(0)
+		
 		
 		this_page_transcripts_list = get_page_items(page_source,url)
 		
